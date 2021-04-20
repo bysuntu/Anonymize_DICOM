@@ -37,7 +37,7 @@
 #include <sys/stat.h>
 #include <ctype.h>
 #include <windows.h>
-#include <dirent.h>
+//#include "dirent.h"
 
 #include <vector>
 #include <map>

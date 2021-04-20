@@ -5,7 +5,7 @@ PROJECT(rmCMR)
 find_package(FLTK REQUIRED)
 find_package(GDCM REQUIRED)
 
-include_directories(${FLTK_USE_FILE} ${GDCM_USE_FILE} "C:/Users/bysu/Downloads/fltk-1.3.5")
+include_directories(${FLTK_USE_FILE} ${GDCM_USE_FILE} "C:/Users/hrlsby/Downloads/fltk-1.3.5")
 
 IF(GDCM_FOUND)
 	INCLUDE(${GDCM_USE_FILE})

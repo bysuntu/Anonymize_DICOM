@@ -18,6 +18,7 @@
 #include <gdcmImage.h>
 #include <gdcmFile.h>
 #include <gdcmAnonymizer.h>
+#include <gdcmSmartPointer.h>
 
 #include <iostream>
 #include <fstream>
@@ -25,7 +26,7 @@
 #include <sys/stat.h>
 #include <ctype.h>
 #include <windows.h>
-#include <dirent.h>
+#include "dirent.h"
 #include <sstream>
 
 #include <vector>
@@ -44,12 +45,25 @@ std::string meToString(T v){
 	return temp_.str();
 }
 
+class oV{
+public:
+	bool first;
+	int second;
+	std::string third;
+	oV(bool v0, int v1, std::string v2):first(v0), second(v1), third(v2)
+	{
+	}
+	oV():first(false), second(-1), third("")
+	{}
+
+};
+
 std::string removeSpace(std::string Str)
 {
 	std::string outStr;
 	for (unsigned int i=0; i < Str.size(); i++)
 	{
-		if (!isspace(Str[i]) && Str[i]!='/' && Str[i] != '-')
+		if (!isspace(Str[i]) && (Str[i] != '_'))
 		{
 			outStr += Str[i];
 		}
@@ -60,11 +74,12 @@ std::string removeSpace(std::string Str)
 std::string replaceSpecialCharacters(std::string filepath)
 {
 	std::string newpath;
-	char characters[] = { '\\', '/', '*', '"', '<', '>', ':', '|', '?', ' ' };
+	char all[] = { '\\', '*', '"', '<', '>', ':', '|', '?', ' ', '/', '-' };
+	std::set<char> characters(all, all + 11);
 	for (unsigned int i = 0; i < filepath.size(); i++)
-		for (unsigned int j = 0; j < std::strlen(characters); j++)
-			if (filepath[i] == characters[j])
-				filepath[i] = '_';
+		if (characters.find(filepath[i]) != characters.end())
+			filepath[i] = '_';
+
 	return filepath;
 }
 
@@ -88,7 +103,7 @@ std::map<std::string, int> loadCSV(const char *fileName, std::vector<std::vector
 				if (line.find(",") >= 0 && line.find(",") < 1000)
 				{
 					table[n][i] = line.substr(0, line.find(","));
-					if ((i == 1 || i == 5 || i == 6) && n > 0)
+					if ((i == 1 || i == 5) && n > 0)
 						table[n][i] = removeSpace(table[n][i]);
 					/*
 					if (i == 9 && n > 0)
@@ -100,6 +115,7 @@ std::map<std::string, int> loadCSV(const char *fileName, std::vector<std::vector
 					for (int j = 0; j < (20 - (int)table[n][i].length()); j++)
 						std::cout << " ";
 					*/
+					
 				}
 				else if (line.find("\n") > 0){
 					table[n][i] = line.substr(0, line.find("\n"));
@@ -124,40 +140,57 @@ std::map<std::string, int> loadCSV(const char *fileName, std::vector<std::vector
 	return caseMap;
 }
 
-void modifyTags(std::map<const gdcm::Tag, std::string>& modiTags, std::string bbid, std::string diag){
-	const gdcm::Tag tPName(0x10, 0x10);
-	const gdcm::Tag tPID(0x10, 0x20);
-	const gdcm::Tag tPAge(0x10, 0x1010);
-	const gdcm::Tag tPDOB(0x10, 0x30);
-	const gdcm::Tag tPSex(0x10, 0x40);
-	const gdcm::Tag tPSize(0x10, 0x1020);
-	const gdcm::Tag tPWeight(0x10, 0x1030);
-	const gdcm::Tag tDescrb(0x8, 0x1030);
-	const gdcm::Tag tInstitute(0x8, 0x80);
-	const gdcm::Tag tAddress(0x8, 0x81);
-	const gdcm::Tag tPhysician(0x8, 1050);
+std::set<std::string> removeTags(const char *fileName = "remove"){
+	std::set<std::string> tagStr;
 
-	modiTags[tPName] = bbid;
-	modiTags[tPID] = bbid;
-	modiTags[tPAge] = "";
-	modiTags[tPDOB] = "";
-	modiTags[tPSex] = "";
-	modiTags[tPSize] = "";
-	modiTags[tPWeight] = "";
-	modiTags[tDescrb] = diag;
-	modiTags[tInstitute] = "";
-	modiTags[tAddress] = "";
-	modiTags[tPhysician] = "";
+	//tagStr.insert("(0010,0030)");
+	//tagStr.insert("(0010,0040)");
+
+	tagStr.insert("(0008,0050)");
+	tagStr.insert("(0008,0080)");
+	tagStr.insert("(0008,0081)");
+	tagStr.insert("(0008,1040)");
+	tagStr.insert("(0008,1050)");
+	tagStr.insert("(0020,0010)");
+	tagStr.insert("(0040,0254)");
+	
+	std::ifstream tagFile;
+	tagFile.open(fileName);
+	std::string line;
+	if (tagFile.is_open()){
+		while(getline(tagFile, line)){
+			// std::cout << line.c_str() << std::endl;
+			tagStr.insert(line);
+		}
+		tagFile.close();
+	}
+	return tagStr;
 }
 
-std::pair<bool, std::string> rwGDCM(const char *fileName, const char *outputFolder, std::vector<std::vector<std::string> >& table, std::map<std::string, int> caseMap){
-	gdcm::Reader reader;
-	reader.SetFileName(fileName);
-	if (!reader.Read())
-	{
-		std::cerr << "Could not read: " << fileName << std::endl;
-		return std::make_pair(false, "");
+std::set<std::string> keepTags(const char *fileName = "protect")
+{
+	std::set<std::string> tagStr;
+	tagStr.insert("(0010,0010)");
+	tagStr.insert("(0010,0020)");
+	std::ifstream tagFile;
+	tagFile.open(fileName);
+	std::string line;
+	if (tagFile.is_open()){
+		while(getline(tagFile, line)){
+			// std::cout << line.c_str() << std::endl;
+			tagStr.insert(line);
+		}
+		tagFile.close();
 	}
+	return tagStr;
+
+}
+
+
+bool checkFile(const char* fileName, std::string bbid, std::string protocol){
+	gdcm::ImageReader reader;
+	reader.SetFileName(fileName);
+	reader.Read();
 
 	gdcm::File &file = reader.GetFile();
 	gdcm::DataSet &ds = file.GetDataSet();
@@ -168,9 +201,72 @@ std::pair<bool, std::string> rwGDCM(const char *fileName, const char *outputFold
 	gdcm::StringFilter sf;
 	sf.SetFile(file);
 
-	const gdcm::Tag tStudyProtocol(0x18, 0x1030);
+	const gdcm::Tag tStudyProtocol(0x8, 0x1030);
+	const gdcm::Tag tPName(0x10, 0x10);
 	const gdcm::Tag tPID(0x10, 0x20);
+	const gdcm::Tag tDOB(0x10, 0x30);
+
+	std::string studyProtocol = sf.ToString(tStudyProtocol);
+	
+	if (strncmp(studyProtocol.c_str(), protocol.c_str(), protocol.length()) != 0){
+		std::cout << studyProtocol.c_str() << protocol.c_str() << std::endl;
+		return false;
+	}
+	if (strncmp(sf.ToString(tPName).c_str(), bbid.c_str(), bbid.length()) != 0){
+		std::cout << "Name" << std::endl;
+		std::cout << sf.ToString(tPName).c_str() << bbid.c_str() << std::endl;
+		return false;
+	}
+	if (strncmp(sf.ToString(tPID).c_str(), bbid.c_str(), bbid.length()) != 0){
+		std::cout << "PID" << std::endl;
+		std::cout << sf.ToString(tPID).c_str() << bbid.c_str() << std::endl;
+		return false;
+	}
+	return true;
+}
+
+oV rwGDCM(const char *fileName, const char *outputFolder, std::vector<std::vector<std::string> >& table, std::map<std::string, int> caseMap, 
+	const std::set<std::string>& emptyStrings, const std::set<std::string>& keepStrings)
+{
+	oV result;
+
+	gdcm::ImageReader *reader = new gdcm::ImageReader();
+	reader->SetFileName(fileName);
+	if (!reader->Read())
+	{
+		std::cerr << "Could not read: " << fileName << std::endl;
+		delete reader;
+		return result;
+	}
+	
+	gdcm::File &file = reader->GetFile();
+	gdcm::DataSet &ds = file.GetDataSet();
+	const gdcm::Global& g = gdcm::Global::GetInstance();
+	const gdcm::Dicts &dicts = g.GetDicts();
+	const gdcm::Dict &pubdict = dicts.GetPublicDict();
+		
+	const gdcm::Image &image = reader->GetImage();
+	try{
+		image.GetPixelFormat().GetScalarTypeAsString();
+	}
+	catch(...){
+		std::cout << fileName << " is not a valid DICOM file" << std::endl;
+		delete reader;
+		return result;
+	}
+
+	gdcm::StringFilter sf;
+	sf.SetFile(file);
+
+	const gdcm::Tag tStudyProtocol(0x18, 0x1030);
+	const gdcm::Tag tPName(0x10, 0x10);
+	const gdcm::Tag tPID(0x10, 0x20);
+	const gdcm::Tag tDescrb(0x8, 0x1030);
 	const gdcm::Tag tSeriesNum(0x20, 0x11);
+	const gdcm::Tag tDOB(0x10, 0x30);
+	const gdcm::Tag tWeight(0x10, 0x1030);
+	const gdcm::Tag tHeight(0x10, 0x1020);
+
 	gdcm::Tag tSOPUID;
 	pubdict.GetDictEntryByName("SOP Instance UID", tSOPUID);
 
@@ -180,7 +276,8 @@ std::pair<bool, std::string> rwGDCM(const char *fileName, const char *outputFold
 		std::cout << "Remove" << std::endl;
 		std::cout << fileName << std::endl;
 		std::cout << sf.ToString(tPID) << std::endl;
-		return std::make_pair(false, "");
+		delete reader;
+		return result;
 	}
 
 	std::string patientID = removeSpace(sf.ToString(tPID));
@@ -188,7 +285,7 @@ std::pair<bool, std::string> rwGDCM(const char *fileName, const char *outputFold
 	if (ds.FindDataElement(tSOPUID) && (caseMap.find(patientID) != caseMap.end()))
 	{
 		int n = caseMap.find(patientID)->second;
-		std::string outName(removeSpace(sf.ToString(tSeriesNum)));
+		std::string outName(replaceSpecialCharacters(sf.ToString(tSeriesNum)));
 		outName.append("_");
 		outName.append(sf.ToString(tSOPUID));
 		// std::string seriesNum = sf.ToString(tSeriesNum);
@@ -199,34 +296,46 @@ std::pair<bool, std::string> rwGDCM(const char *fileName, const char *outputFold
 		std::string bbid = table[n][5];
 		std::string diag = table[n][6];
 		
-		std::map<const gdcm::Tag, std::string> tagMap;
-		modifyTags(tagMap, bbid, diag);
-
 		gdcm::Anonymizer modiTags;
-		modiTags.SetFile(file);
-
+		modiTags.SetFile(reader->GetFile());
+		// std::cout << fileName << std::endl;
 		for (auto it = ds.Begin(); it != ds.End(); it++)
 		{
 			// Current Tag Str
-			const gdcm::Tag curT_ = it->GetTag();
+			const gdcm::Tag &curT_ = it->GetTag();
 			std::string curStr_ = sf.ToString(curT_);
+			std::string curTag_;
 			std::ostringstream temp_;
 			temp_ << curT_;
-			curStr_ = temp_.str();
-
-			if (tagMap.find(curT_) != tagMap.end()){
-				modiTags.Replace(curT_, tagMap.find(curT_)->second.c_str());
+			curTag_ = temp_.str();
+			// std::cout << "all Tag: " << curTag_.c_str() << curStr_.c_str() << std::endl;
+			if (keepStrings.count(curTag_))
+			{
+				// std::cout << "Tag: " << curTag_.c_str() << curStr_.c_str() << std::endl;
+				// modiTags.Replace(curT_, "");
 			}
-			else if (curStr_.find("0010") == 1){
-				modiTags.Remove(curT_);
+			else if (emptyStrings.count(curTag_))
+			{
+				modiTags.Replace(curT_, "");
+				// std::cout << "e Tag: " << curTag_.c_str() << curStr_.c_str() << std::endl;
+				// ds.Remove(curT_);
+			}
+			else if (curTag_.find("0010") == 1){
+				// std::cout << "d Tag: " << curTag_.c_str() << curStr_.c_str() << std::endl;
+				ds.Remove(curT_);
 			}
 		}
+		
+		modiTags.Replace(tPID, bbid.c_str());
+		modiTags.Replace(tPName, bbid.c_str());
+		modiTags.Replace(tDescrb, diag.c_str());
+		
 		std::string outFileName;
 		outFileName.append(outputFolder);
 
 		std::vector<std::string> layers;
-		layers.push_back(removeSpace(table[n][5]));
-		layers.push_back(replaceSpecialCharacters(removeSpace(studyProtocol)));
+		layers.push_back(removeSpace(replaceSpecialCharacters(table[n][5])));
+		layers.push_back(replaceSpecialCharacters(studyProtocol));
 		layers.push_back(outName);
 		// outFileName.append(removeSpace(table[n][5].c_str()));
 
@@ -245,17 +354,26 @@ std::pair<bool, std::string> rwGDCM(const char *fileName, const char *outputFold
 			}
 		}
 		// std::cout << "output file: " << outFileName.c_str() << std::endl;
-		gdcm::Writer writer;
-		writer.SetFileName(outFileName.c_str());
-		writer.SetFile(file);
-		if (! writer.Write()){
+		gdcm::Writer* writer = new gdcm::Writer();
+		writer->SetFileName(outFileName.c_str());
+		writer->SetFile(file);
+		if (! writer->Write()){
 			std::cout << "Could not write" << std::endl;
-			return std::make_pair(false, "");
+			delete writer;
+			delete reader;
+			return result;
 		}
-		else
-			return std::make_pair(true, table[n][1]);
+		else{
+			result.first = true;
+			result.second = n;
+			result.third = outFileName;
+			delete writer;
+			delete reader;
+			return result;
+		}
 	}
-	return std::make_pair(false, "");
+	delete reader;
+	return result;
 }
 
 void parseFolder(std::string inputFolder, std::string outputFolder, std::vector<std::vector<std::string> >& table, std::map<std::string, int> caseMap){
@@ -265,6 +383,9 @@ void parseFolder(std::string inputFolder, std::string outputFolder, std::vector<
 
 	if (pdir == NULL)
 		return;
+
+	const std::set<std::string> emptyStrings = removeTags();
+	const std::set<std::string> keepStrings = keepTags();
 
 	while (pent = readdir(pdir)){
 		if (pent == NULL)
@@ -277,12 +398,13 @@ void parseFolder(std::string inputFolder, std::string outputFolder, std::vector<
 			// strncat_s(pathName, pent->d_name, strlen(inputFolder.c_str()));
 			strncat_s(pathName, pent->d_name, pent->d_namlen);
 			if (pent->d_type == isFile){
-				std::pair<bool, std::string> info = rwGDCM(pathName, outputFolder.c_str(), table, caseMap);
+				// std::cout << pathName << std::endl;
+				oV info = rwGDCM(pathName, outputFolder.c_str(), table, caseMap, emptyStrings, keepStrings);
 
-				if (info.first){
-					std::string numStr = table[caseMap.find(info.second)->second][8];
+				if (info.first && checkFile(info.third.c_str(), table[info.second][5], table[info.second][6])){
+					std::string numStr = table[info.second][8];
 					int num_ = std::stoi(numStr, nullptr, 10);
-					table[caseMap.find(info.second)->second][8] = meToString(num_ + 1);
+					table[info.second][8] = meToString(num_ + 1);
 				}
 			}
 			else{
